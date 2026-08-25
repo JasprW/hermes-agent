@@ -1263,6 +1263,9 @@ export type { FloatingAnchor } from '@/components/pane-shell/tree/renderer/float
 export { StatusDot, type StatusTone } from '@/components/status-dot'
 export { Badge } from '@/components/ui/badge'
 export { Button } from '@/components/ui/button'
+/** A tone-washed advisory block. Unlike `Alert` it takes an arbitrary colour,
+ *  so it can wear a tone the data already picked. */
+export { Callout } from '@/components/ui/callout'
 export { Checkbox } from '@/components/ui/checkbox'
 export { Codicon } from '@/components/ui/codicon'
 export { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -1297,6 +1300,10 @@ export {
 export { EmptyState } from '@/components/ui/empty-state'
 export { ErrorState } from '@/components/ui/error-state'
 export { FadeScroll } from '@/components/ui/fade-scroll'
+/** The app's one field language — a label stacked over its control, hint
+ *  underneath. Don't hand-roll a label+control stack; both bundled plugins did,
+ *  and the two of them plus this made three. */
+export { Field, FieldHint } from '@/components/ui/field'
 export { GlyphSpinner, type SpinnerName } from '@/components/ui/glyph-spinner'
 export { Input } from '@/components/ui/input'
 export { Kbd, KbdGroup } from '@/components/ui/kbd'
@@ -1304,6 +1311,10 @@ export { Kbd, KbdGroup } from '@/components/ui/kbd'
  *  page loads) — the same one every core page uses. */
 export { Loader, type LoaderType } from '@/components/ui/loader'
 export { LogView } from '@/components/ui/log-view'
+/** The chrome a full-page surface is built from — shell, header, title, count,
+ *  actions. Both bundled plugin pages wear it, so two plugins read as two
+ *  pages of one app rather than two apps. */
+export { PageHeader, PageHeaderActions, PageHeaderCount, PageHeaderTitle, PageShell } from '@/components/ui/page-shell'
 export { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 export { ScrollArea } from '@/components/ui/scroll-area'
 export { SearchField } from '@/components/ui/search-field'
@@ -1318,9 +1329,28 @@ export {
   SelectValue
 } from '@/components/ui/select'
 export { Separator } from '@/components/ui/separator'
+/** The detail panel pinned to the edge of a page — non-modal, so the surface
+ *  behind it stays live. NOT `Sheet`, which is a portalled modal dialog. */
+export {
+  SIDE_PANEL_LABEL,
+  SidePanel,
+  SidePanelAction,
+  SidePanelBody,
+  SidePanelClose,
+  SidePanelHeader,
+  SidePanelMeta,
+  SidePanelMetaRow,
+  type SidePanelProps,
+  SidePanelSection,
+  SidePanelTitle,
+  SidePanelToolbar
+} from '@/components/ui/side-panel'
 export { Skeleton } from '@/components/ui/skeleton'
+/** A bounded number with − / + nudges. */
+export { Stepper } from '@/components/ui/stepper'
 export { Switch } from '@/components/ui/switch'
 export { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+export { TextTab, TextTabMeta } from '@/components/ui/text-tab'
 export { Textarea } from '@/components/ui/textarea'
 export { Tip, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 export type { GatewayEventListener } from '@/contrib/events'

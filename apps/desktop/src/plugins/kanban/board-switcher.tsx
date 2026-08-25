@@ -18,6 +18,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Field,
+  FieldHint,
   host,
   Input,
   Select,
@@ -34,7 +36,7 @@ import { useEffect, useState } from 'react'
 
 import { $boardSlug, BOARDS_KEY, createBoard, fetchBoards, fetchProjects, PROJECTS_KEY, updateBoard } from './api'
 import type { BoardMeta } from './types'
-import { errText, FIELD_LABEL, useKanban } from './ui'
+import { errText, useKanban } from './ui'
 
 const NO_PROJECT = '__none__'
 
@@ -47,8 +49,7 @@ function ProjectPicker({ onChange, value }: { onChange: (id: string) => void; va
   const projects = data?.projects ?? []
 
   return (
-    <label className="flex flex-col gap-1">
-      <span className={FIELD_LABEL}>{k.project}</span>
+    <Field label={k.project}>
       <Select onValueChange={id => onChange(id === NO_PROJECT ? '' : id)} value={value || NO_PROJECT}>
         <SelectTrigger>
           <SelectValue />
@@ -62,11 +63,11 @@ function ProjectPicker({ onChange, value }: { onChange: (id: string) => void; va
           ))}
         </SelectContent>
       </Select>
-      <span className="text-[0.6875rem] leading-relaxed text-(--ui-text-quaternary)">
+      <FieldHint>
         {k.projectHintPre}
         <span className="font-mono">{k.projectHintCmd}</span>.
-      </span>
-    </label>
+      </FieldHint>
+    </Field>
   )
 }
 
@@ -106,8 +107,7 @@ function NewBoardDialog({ onClose, open }: { onClose: () => void; open: boolean 
           <DialogTitle>{k.newBoard}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
-            <span className={FIELD_LABEL}>{k.name}</span>
+          <Field label={k.name}>
             <Input
               autoFocus
               onChange={event => setName(event.target.value)}
@@ -115,8 +115,8 @@ function NewBoardDialog({ onClose, open }: { onClose: () => void; open: boolean 
               placeholder={k.boardNamePlaceholder}
               value={name}
             />
-            {slug && <span className="text-[0.6875rem] text-(--ui-text-quaternary)">{k.slug(slug)}</span>}
-          </label>
+            {slug && <FieldHint>{k.slug(slug)}</FieldHint>}
+          </Field>
           <ProjectPicker onChange={setProject} value={project} />
         </div>
         <DialogFooter>
@@ -163,11 +163,10 @@ function BoardSettingsDialog({ board, onClose }: { board: BoardMeta | null; onCl
           <DialogTitle>{board ? k.boardSettingsFor(board.name || board.slug) : k.boardSettings}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
-            <span className={FIELD_LABEL}>{k.name}</span>
+          <Field label={k.name}>
             <Input onChange={event => setName(event.target.value)} placeholder={k.boardNamePlaceholder} value={name} />
-            {board && <span className="text-[0.6875rem] text-(--ui-text-quaternary)">{k.slug(board.slug)}</span>}
-          </label>
+            {board && <FieldHint>{k.slug(board.slug)}</FieldHint>}
+          </Field>
           <ProjectPicker onChange={setProject} value={project} />
         </div>
         <DialogFooter>
