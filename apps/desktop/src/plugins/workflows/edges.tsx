@@ -3,6 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath, Position, u
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 
 import { useAddStep } from './add-step'
+import { useFlowDir } from './direction'
 import { RANK_GAP } from './layout'
 import type { EdgeState } from './protocol'
 
@@ -105,25 +106,34 @@ export function DataEdge(props: EdgeProps) {
   // graph, behind whatever cards are in the way. The curvature prop never had
   // anything to bite on.
   //
-  // So the belly is stated outright: both control points drop by a depth scaled
-  // to the span, floored so a short hop still clears the rank it passes under.
-  // The source control point also leans right before it dives, because the
-  // arm's port faces right like every other output — the wire has to be seen
-  // leaving its own dot, not cutting back under the card it came from.
-  const span = Math.abs(targetX - sourceX)
+  // So the belly is stated outright: both control points swing clear by a depth
+  // scaled to the span, floored so a short hop still clears the rank it passes.
+  // The source control point also leans OUT first, because the arm's port faces
+  // the way every other output does — the wire has to be seen leaving its own
+  // dot, not cutting back under the card it came from.
+  //
+  // Vertical is the same curve transposed: the flow runs down instead of right,
+  // so the span is measured on y, the belly swings left (which is the face the
+  // rework port moves to), and the lean goes down.
+  const vertical = useFlowDir() === 'TB'
+  const span = Math.abs(vertical ? targetY - sourceY : targetX - sourceX)
   const belly = Math.max(72, span * 0.3)
   const out = Math.max(32, span * 0.08)
 
-  const path = isLoop
-    ? `M ${sourceX},${sourceY} C ${sourceX + out},${sourceY + belly} ${targetX},${targetY + belly} ${targetX},${targetY}`
-    : bezier
+  const loopPath = vertical
+    ? `M ${sourceX},${sourceY} C ${sourceX - belly},${sourceY + out} ${targetX - belly},${targetY} ${targetX},${targetY}`
+    : `M ${sourceX},${sourceY} C ${sourceX + out},${sourceY + belly} ${targetX},${targetY + belly} ${targetX},${targetY}`
+
+  const path = isLoop ? loopPath : bezier
 
   // Where the toolbar sits. getBezierPath hands back a label point, but only
   // for the path IT drew — on a loop we drew our own, so the midpoint is the
   // cubic evaluated at t=0.5: (P0 + 3·P1 + 3·P2 + P3) / 8. Off by that and the
   // buttons float in open canvas, nowhere near the wire they belong to.
-  const midX = isLoop ? (4 * sourceX + 3 * out + 4 * targetX) / 8 : bezierX
-  const midY = isLoop ? (4 * sourceY + 4 * targetY + 6 * belly) / 8 : bezierY
+  const loopMidX = vertical ? (4 * sourceX + 4 * targetX - 6 * belly) / 8 : (4 * sourceX + 3 * out + 4 * targetX) / 8
+  const loopMidY = vertical ? (4 * sourceY + 3 * out + 4 * targetY) / 8 : (4 * sourceY + 4 * targetY + 6 * belly) / 8
+  const midX = isLoop ? loopMidX : bezierX
+  const midY = isLoop ? loopMidY : bezierY
   const canSplice = !isLoop && Math.hypot(targetX - sourceX, targetY - sourceY) >= RANK_GAP * 0.75
 
   // n8n darkens the wire under the pointer. Ours can't take a colour — forward
@@ -142,7 +152,9 @@ export function DataEdge(props: EdgeProps) {
   // Edge ids are authored as "implement->review", and `>` is not valid in a
   // URL fragment — browsers happen to resolve it, but the id is also what a
   // querySelector would have to escape. Sanitised to keep the reference legal.
-  const gradId = `grad-${id.replace(/[^\w-]/g, '_')}`
+  const safeId = id.replace(/[^\w-]/g, '_')
+  const gradId = `grad-${safeId}`
+  const beadId = `bead-${safeId}`
   const stroke = isLoop ? undefined : `url(#${gradId})`
 
   return (
@@ -182,6 +194,49 @@ export function DataEdge(props: EdgeProps) {
         strokeWidth={40}
       />
       {active && (
+        <defs>
+          {/* What makes it read as liquid rather than as a bead.
+
+              The ramp runs the opposite way to a lit solid. A sphere is
+              brightest where the light hits and falls off to a dark edge —
+              which is a pearl, or an egg. Water is the inverse: the middle is
+              nearly clear because you're looking straight through it, and the
+              perimeter is where it goes bright, because at a glancing angle
+              the surface turns reflective and light caught inside can't
+              escape. Density at the rim, transparency in the body.
+
+              `fx`/`fy` pull the clear part off-centre so the two halves aren't
+              the same. Near the light the wall is thin; opposite it the ramp
+              piles up into the fat bright crescent a droplet focuses onto its
+              own far side. One focal offset does all of that, with no second
+              shape to keep in sync with the motion — at this size a separate
+              specular would land under a pixel anyway, which is the same
+              reason the droplet is an ellipse and not a hand-drawn teardrop.
+
+              Object-bounding-box units, so the ramp stretches with the rx/ry
+              deformation below instead of sliding across a shape that's
+              changing under it. `rotate="auto"` then keeps the thin edge
+              facing the direction of travel for the whole trip.
+
+              Deliberately NOT tinted per wire, for the same reason the fill
+              never was: the packet is one object wherever it rides, and the
+              wire under it already says which kind of hop this is. */}
+          <radialGradient cx="50%" cy="50%" fx="34%" fy="28%" id={beadId} r="50%">
+            {/* Almost nothing through the body — the wire underneath should
+                read straight through it. Only the last quarter has any weight,
+                and even the rim stops short of opaque, so the droplet is a
+                curve of light rather than an object with a fill. */}
+            <stop offset="0%" stopColor="var(--packet-glass)" stopOpacity="0.025" />
+            <stop offset="52%" stopColor="var(--packet-glass)" stopOpacity="0.055" />
+            <stop offset="78%" stopColor="var(--packet-glass)" stopOpacity="0.17" />
+            <stop offset="93%" stopColor="var(--packet-glass)" stopOpacity="0.42" />
+            {/* Feathered rather than cut, so a 3px shape doesn't alias into a
+                sawtooth ring as it turns. */}
+            <stop offset="100%" stopColor="var(--packet-glass)" stopOpacity="0.14" />
+          </radialGradient>
+        </defs>
+      )}
+      {active && (
         // A droplet, not a dot. Two things make it read as liquid:
         //
         //  1. `rotate="auto"` turns the shape to the path tangent, so its long
@@ -201,7 +256,7 @@ export function DataEdge(props: EdgeProps) {
         // around 0.6 zoom, the asymmetric taper of a real droplet is smaller
         // than a pixel — the elongation is the whole signal, and an ellipse
         // gets it without hand-authoring a shape per edge.
-        <ellipse className={`packet ${isLoop ? 'packet-loop' : ''}`} rx={3} ry={3}>
+        <ellipse className={`packet ${isLoop ? 'packet-loop' : ''}`} fill={`url(#${beadId})`} rx={3} ry={3}>
           <animate
             attributeName="rx"
             calcMode="spline"

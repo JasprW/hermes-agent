@@ -9,8 +9,8 @@ import { Button, cn, Codicon, composerFill, composerSurfaceGlass, PRIMARY_ICON_B
 // same glass, same 2xl capsule, same primary send button. A second input style
 // in the same window is how a plugin starts looking bolted on.
 //
-// Faked: `onSend` resolves intents locally. The real one posts to the plugin
-// backend and the agent's edits arrive as document mutations.
+// `onSend` runs a real turn: the model is handed the graph's own tool schema
+// and the open scenario, and whatever it calls lands as a document mutation.
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 
 export interface AgentReply {
@@ -29,7 +29,7 @@ export function Composer({
   onSend,
   phase
 }: {
-  onSend: (text: string) => AgentReply
+  onSend: (text: string) => Promise<AgentReply>
   phase: 'idle' | 'running' | 'done'
 }) {
   const [turns, setTurns] = useState<Turn[]>([])
@@ -42,7 +42,7 @@ export function Composer({
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
   }, [turns, thinking])
 
-  const submit = (text: string) => {
+  const submit = async (text: string) => {
     const t = text.trim()
 
     if (!t || thinking) {
@@ -52,20 +52,20 @@ export function Composer({
     setTurns(prev => [...prev, { role: 'user', text: t }])
     setDraft('')
     setThinking(true)
-    // A beat of latency so an agent edit reads as something that happened, not
-    // as a form submit.
-    window.setTimeout(() => {
-      const { reply, edit } = onSend(t)
+
+    try {
+      const { reply, edit } = await onSend(t)
       setTurns(prev => [...prev, { role: 'agent', text: reply, edit }])
+    } finally {
       setThinking(false)
       inputRef.current?.focus()
-    }, 420)
+    }
   }
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      submit(draft)
+      void submit(draft)
     }
   }
 
@@ -119,7 +119,7 @@ export function Composer({
           aria-label="Send"
           className={PRIMARY_ICON_BTN}
           disabled={!draft.trim() || thinking}
-          onClick={() => submit(draft)}
+          onClick={() => void submit(draft)}
           title="Send (↵)"
         >
           <Codicon name="arrow-up" size="0.875rem" />

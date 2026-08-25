@@ -835,6 +835,9 @@ export interface Problem {
   level: 'error' | 'warning'
   /** Names the offending step, so the message stands alone in a tool result. */
   message: string
+  /** Which step it's about, for a caller showing one step's problems rather
+   *  than the whole list. Absent when it's about the scenario as a whole. */
+  step?: string
 }
 
 /** What's wrong with the scenario as authored — the things you'd otherwise only
@@ -859,7 +862,7 @@ export function validate(g: Graph): Problem[] {
     const { def, config } = dataOf(n)
 
     if (entries.length && !entries.includes(n) && !entries.some(s => reaches(g, s.id, id))) {
-      problems.push({ level: 'error', message: `${id} can't be reached from a start.` })
+      problems.push({ level: 'error', message: `${id} can't be reached from a start.`, step: id })
     }
 
     // Deciding when to stop going round is a gate's job — `max takes` is the
@@ -869,7 +872,8 @@ export function validate(g: Graph): Problem[] {
     if (def.kind !== 'gate' && g.edges.some(e => e.source === id && isLoop(e))) {
       problems.push({
         level: 'warning',
-        message: `${id}'s rework loop doesn't leave from a gate, so nothing decides when to stop — the run won't take it.`
+        message: `${id}'s rework loop doesn't leave from a gate, so nothing decides when to stop — the run won't take it.`,
+        step: id
       })
     }
 
@@ -879,14 +883,16 @@ export function validate(g: Graph): Problem[] {
       if (arms.length < 2) {
         problems.push({
           level: 'warning',
-          message: `${id} is a gate with ${arms.length === 1 ? 'one output' : 'no outputs'} — it isn't branching.`
+          message: `${id} is a gate with ${arms.length === 1 ? 'one output' : 'no outputs'} — it isn't branching.`,
+          step: id
         })
       }
 
       if (arms.length && !arms.some(a => a.when.mode === 'always')) {
         problems.push({
           level: 'warning',
-          message: `${id} has no default arm, so some verdicts route nowhere.`
+          message: `${id} has no default arm, so some verdicts route nowhere.`,
+          step: id
         })
       }
 
@@ -896,17 +902,18 @@ export function validate(g: Graph): Problem[] {
         // An arm can outlive its wire — that's what lets you write the table
         // before you wire it — but a rule the run can't follow is worth saying.
         if (!armTargets(g, id, a.id).length) {
-          problems.push({ level: 'warning', message: `${where} isn't wired anywhere.` })
+          problems.push({ level: 'warning', message: `${where} isn't wired anywhere.`, step: id })
         }
 
         if (a.when.mode === 'checks' && !a.when.checks.length) {
-          problems.push({ level: 'warning', message: `${where} has no conditions yet.` })
+          problems.push({ level: 'warning', message: `${where} has no conditions yet.`, step: id })
         }
 
         if (a.when.mode === 'prose' && !a.when.source.trim()) {
           problems.push({
             level: 'warning',
-            message: `${where} has nothing for the gate to read.`
+            message: `${where} has nothing for the gate to read.`,
+            step: id
           })
         }
       })
@@ -916,13 +923,14 @@ export function validate(g: Graph): Problem[] {
     // kinds doesn't leave a check behind pointed at a step that no longer has
     // it — or, worse, stop being checked on the kind it moved to.
     if (hasField(def.kind, 'until') && !config.until?.spec.trim()) {
-      problems.push({ level: 'warning', message: `${id} doesn't say what it waits for.` })
+      problems.push({ level: 'warning', message: `${id} doesn't say what it waits for.`, step: id })
     }
 
     if (hasField(def.kind, 'goal') && !config.goal?.trim()) {
       problems.push({
         level: 'warning',
-        message: `${id} has no ${def.kind === 'human' ? 'question' : 'goal'}.`
+        message: `${id} has no ${def.kind === 'human' ? 'question' : 'goal'}.`,
+        step: id
       })
     }
   }

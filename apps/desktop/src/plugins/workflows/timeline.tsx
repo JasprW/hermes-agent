@@ -114,17 +114,22 @@ export function Timeline({ p }: { p: Player }) {
   // pause suspends it when available — in-flight steps finish, the next one
   // doesn't dispatch (LangGraph-interrupt / Prefect-pause semantics).
   // Space is the transport key — named in every state this button can be in.
-  const runBtn = !p.running
-    ? { act: p.start, title: armed ? 'Run again (Space)' : 'Run scenario (Space)', pause: false }
-    : paused
-      ? { act: p.resume, title: 'Resume — dispatch the next step (Space)', pause: false }
-      : pausing
-        ? { act: undefined, title: 'Pausing — letting the step in flight finish', pause: true }
-        : {
-            act: p.requestPause,
-            title: 'Pause when available, before the next step (Space)',
-            pause: true
-          }
+  // Parked on a person comes first: the run IS stopped, so offering a pause
+  // would be offering to stop it twice, and the only thing that moves it again
+  // is the answer. So the button reopens the question.
+  const runBtn = p.asking
+    ? { act: p.reveal, title: 'Waiting on you — reopen the question (Space)', pause: false }
+    : !p.running
+      ? { act: p.start, title: armed ? 'Run again (Space)' : 'Run scenario (Space)', pause: false }
+      : paused
+        ? { act: p.resume, title: 'Resume — dispatch the next step (Space)', pause: false }
+        : pausing
+          ? { act: undefined, title: 'Pausing — letting the step in flight finish', pause: true }
+          : {
+              act: p.requestPause,
+              title: 'Pause when available, before the next step (Space)',
+              pause: true
+            }
 
   return (
     <div className="tl">
@@ -135,7 +140,11 @@ export function Timeline({ p }: { p: Player }) {
         size="icon"
         title={runBtn.title}
       >
-        <Codicon name={runBtn.pause ? 'debug-pause' : 'play'} size="0.875rem" />
+        {/* `triangle-right` is the only genuinely solid play in the set — both
+            `play` and `debug-start` draw an outline around the triangle, which
+            on the filled primary circle reads as a disabled ring. This matches
+            the solid bars of the `debug-pause` it swaps with. */}
+        <Codicon name={runBtn.pause ? 'debug-pause' : 'triangle-right'} size="1rem" />
       </Button>
       <Button
         className={GHOST_ICON_BTN}

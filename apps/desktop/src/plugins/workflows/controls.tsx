@@ -41,42 +41,14 @@ import {
   Checkbox as UICheckbox,
   Select as UISelect,
   SelectItem as UISelectItem,
+  Stepper as UIStepper,
   Switch as UISwitch
 } from '@hermes/plugin-sdk'
-import { type ReactNode, useState } from 'react'
+import { type ComponentProps, type ReactNode, useState } from 'react'
 
 /** React Flow drags the card under any pointer press it owns; every control
  *  inside a node has to opt out. */
 const NODRAG = 'nodrag'
-
-/* ---------------------------------------------------------------- Field --- */
-
-export function Field({
-  label,
-  hint,
-  tip,
-  children,
-  htmlFor
-}: {
-  label: string
-  hint?: ReactNode
-  /** Tooltip guidance — help stays off the panel and on hover. */
-  tip?: string
-  children: ReactNode
-  htmlFor?: string
-}) {
-  // A <label> wrapping a control is only valid for ONE control — a Segmented or
-  // Stepper contains several, so those get a plain div with a caption instead.
-  const Tag = htmlFor === undefined ? 'div' : 'label'
-
-  return (
-    <Tag className="flex flex-col gap-1" {...(htmlFor ? { htmlFor } : {})} title={tip}>
-      <span className="text-[0.6875rem] leading-4 font-medium text-(--ui-text-secondary)">{label}</span>
-      {children}
-      {hint && <span className="text-[0.6875rem] leading-4 text-(--ui-text-tertiary)">{hint}</span>}
-    </Tag>
-  )
-}
 
 /* ------------------------------------------------------------- controls --- */
 
@@ -246,69 +218,9 @@ export function Checkbox({
   )
 }
 
-export function Stepper({
-  value,
-  onChange,
-  min = 0,
-  max = 999,
-  step = 1,
-  /** Render `min` as "∞" — for budgets where the floor means "no limit". */
-  unboundedAtMin,
-  suffix
-}: {
-  value: number
-  onChange: (v: number) => void
-  min?: number
-  max?: number
-  step?: number
-  unboundedAtMin?: boolean
-  suffix?: string
-}) {
-  const clamp = (n: number) => Math.max(min, Math.min(max, n))
-  const unbounded = unboundedAtMin && value <= min
-
-  // ONE control to the eye: the shell carries the field chrome, the − and +
-  // are quiet zones inside it (full height, real hit area), the number sits
-  // between them. The suffix lives inside the field too — "30 min" is one
-  // value, not a number plus a caption.
-  const nudge = cn(
-    'shrink-0 px-1.5 text-(--ui-text-tertiary) transition-colors',
-    'hover:text-foreground disabled:pointer-events-none disabled:opacity-40'
-  )
-
-  return (
-    <div className={cn(controlVariants({ size: 'sm' }), NODRAG, 'flex items-center gap-1 py-0')}>
-      <button
-        aria-label="Decrease"
-        className={nudge}
-        disabled={value <= min}
-        onClick={() => onChange(clamp(value - step))}
-        type="button"
-      >
-        −
-      </button>
-      <input
-        className="min-w-0 flex-1 border-0 bg-transparent py-1 text-center text-xs leading-4 tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-        max={max}
-        min={min}
-        onChange={e => onChange(clamp(Number(e.target.value)))}
-        readOnly={unbounded}
-        title={unbounded ? 'No limit' : undefined}
-        type={unbounded ? 'text' : 'number'}
-        value={unbounded ? '∞' : value}
-      />
-      {suffix && !unbounded && <span className="shrink-0 text-(--ui-text-tertiary)">{suffix}</span>}
-      <button
-        aria-label="Increase"
-        className={nudge}
-        disabled={value >= max}
-        onClick={() => onChange(clamp(value + step))}
-        type="button"
-      >
-        +
-      </button>
-    </div>
-  )
+/** The app's Stepper, wearing the canvas's drag opt-out. */
+export function Stepper(props: ComponentProps<typeof UIStepper>) {
+  return <UIStepper {...props} className={NODRAG} />
 }
 
 export function TagInput({

@@ -54,17 +54,6 @@
   }
 }
 
-@keyframes panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(var(--panel-enter-y));
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 /* Everything below is scoped to the canvas root. A plugin stylesheet is loaded
    into the same document as the app, so its class names — .node, .glass, .seal
    — share one namespace with every other surface; nesting the sheet under
@@ -133,9 +122,36 @@
     0 0.625rem 1.125rem -0.5rem color-mix(in srgb, #000 8%, transparent),
     0 1.5rem 2.25rem -1rem color-mix(in srgb, #000 8%, transparent);
 
+  /* The travelling packet is made of ONE colour at varying transparency — the
+     droplet's shape comes from where it's dense, not from a second hue. So
+     there's nothing to flip per mode: on ink it's a bead of light on a dark
+     wire, on paper a bead of ink on a pale one, and both are the foreground
+     the packet has always been.
+
+     Declared on the root, not on `.packet`: the stops live in a <defs>, which
+     is a sibling of the ellipse rather than an ancestor, so tokens set on the
+     shape itself would never reach them. */
+  --packet-glass: var(--ui-base);
+  /* The wet look owes as much to what's around the droplet as to the droplet.
+     On paper that's the shadow it casts; on ink it's the light it throws. A
+     whole filter rather than one shadow, because those two want different
+     numbers of passes. */
+  --packet-bloom: drop-shadow(0 0.5px 1px color-mix(in srgb, #000 32%, transparent));
+
   /* Same law, deeper alpha: a dark card sits on a dark canvas, so the cast has
      to work much harder to separate them. */
   :root.dark & {
+    /* A drop shadow under a bright droplet on a dark canvas would be invisible,
+       so the halo becomes light instead — the scatter around something wet and
+       lit, and the one object on this canvas that means "right now".
+
+       Two passes: a tight one that puts the light back in the middle the glass
+       gives away, and a wide soft one for the scatter. A hollow droplet needs
+       more around it than the solid dot did — the body is mostly transparent
+       now, so without this the packet reads dimmer than it used to. */
+    --packet-bloom: drop-shadow(0 0 1.5px color-mix(in srgb, var(--ui-base) 45%, transparent))
+      drop-shadow(0 0 4px color-mix(in srgb, var(--ui-base) 20%, transparent));
+
     --shadow-card:
       0 0.0625rem 0.125rem -0.0625rem color-mix(in srgb, #000 34%, transparent),
       0 0.1875rem 0.375rem -0.1875rem color-mix(in srgb, #000 30%, transparent);
@@ -374,13 +390,15 @@
      only the cards and the floating panels are lighter than it. That's the whole
      trick behind how a builder canvas reads as calm — there is exactly one
      backdrop value on screen, not a chrome tone meeting a canvas tone. */
-  /* Fills the route's pane rather than the viewport — the app shell owns the
-     window, this owns the page. */
+  /* The box and the backdrop are PageShell's, the same one the Kanban board
+     page wears — a page that paints its own surface is how two plugins end up
+     looking like two apps. The canvas gets its own colour where it belongs, on
+     --xy-background-color below, so only the sheet under the CARDS is
+     scenario-tinted; the header strip stays on the app's surface. */
   & {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    background: var(--scenario-canvas);
+    /* What the open inspector takes off the right edge. Anything centred on
+       the canvas reads this so it centres on the part you can still see. */
+    --wf-inspector: 0rem;
   }
   /* min-height:0 or the flex child refuses to shrink and React Flow measures the
      viewport taller than the window. */
@@ -406,20 +424,6 @@
     outline: none;
   }
 
-  /* ---------------- floating panels ----------------
-     The same law as a card, one step up: a light plane, a hairline, and a cast —
-     here --shadow-nous, the taller pool tuned for something that genuinely floats
-     rather than rests. The blur stays but drops the saturate boost, which was
-     pulling the accent out of whatever passed under the panel and tinting it. */
-  .glass {
-    background: var(--scenario-glass);
-    backdrop-filter: blur(16px);
-    border: 0;
-    border-radius: var(--panel-radius);
-    box-shadow:
-      0 0 0 1px var(--scenario-hairline),
-      var(--shadow-nous);
-  }
   .react-flow__panel {
     margin: 14px;
   }
@@ -1102,6 +1106,29 @@
     right: calc(-1 * var(--node-pad-inline));
     background: var(--scenario-ok);
   }
+  /* Vertical flow: the arms leave the BOTTOM edge, so the column of labelled
+     rows becomes a strip of them and each handle lands under its own label
+     rather than all of them stacking on one point. Flexbox does the placement;
+     React Flow reads each handle's own box, so nothing is positioned by hand.
+     The labels centre and truncate — at four arms on a 212px card there's room
+     for a word, and the full text is still in the inspector. */
+  .dir-tb .node-ports {
+    flex-direction: row;
+    gap: 4px;
+  }
+  .dir-tb .port-row {
+    min-width: 0;
+    flex: 1;
+    justify-content: center;
+    padding: 0 3px;
+  }
+  .dir-tb .port-label {
+    text-align: center;
+  }
+  .dir-tb .port-row .react-flow__handle-bottom {
+    bottom: calc(-1 * var(--node-pad-block));
+    background: var(--scenario-ok);
+  }
   .port-row .handle-loop {
     background: var(--scenario-loop);
   }
@@ -1348,10 +1375,14 @@
      One rule for both wires: the packet is the same object wherever it rides,
      and the wire underneath already says which kind of hop it is (solid forward,
      dashed ember backward). Tinting it per-wire made the loop's packet a fourth
-     colour saying something the dashes had already said. */
+     colour saying something the dashes had already said.
+
+     The fill is an attribute on the shape (a per-edge gradient ref), not a
+     declaration here — a `fill` in the stylesheet would outrank the attribute
+     and flatten every packet back to a disc. */
   .packet,
   .packet-loop {
-    fill: var(--ui-base);
+    filter: var(--packet-bloom);
   }
   /* SMIL doesn't read prefers-reduced-motion, so the packet has to opt out
      itself. It IS the motion — a stationary droplet parked mid-wire would say
@@ -1570,106 +1601,19 @@
     color: var(--ui-text-tertiary);
   }
 
-  /* react-flow controls / minimap — fills and text come from the --xy-* bridge
-     above; what's left is shape and the states the library has no variable for.
-
-     One pill, laid out horizontally, with round transparent buttons inside it.
-     The library's default is a vertical column of square bordered buttons, which
-     at four items was a cramped grey ladder in the corner — the least considered
-     object on the canvas. A pill reads as a toolbar, and matches the panel it
-     shares the bottom edge with. */
-  .react-flow__controls {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 2px;
-    padding: 3px;
-    border: 0;
-    border-radius: 999px;
-    background: var(--scenario-glass);
-    backdrop-filter: blur(16px);
-    box-shadow:
-      0 0 0 1px var(--scenario-hairline),
-      var(--shadow-nous);
-  }
-  /* Buttons separate by the gap between their hover fills, not by rules. */
-  .react-flow__controls button {
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 0;
-    border-radius: 999px;
-    transition:
-      background var(--dur-fast) var(--ease-out),
-      color var(--dur-fast) var(--ease-out);
-  }
-  /* React Flow's own zoom controls ship real SVG children — this one stays. */
-  .react-flow__controls button svg {
-    fill: currentColor;
-    width: 13px;
-    height: 13px;
-  }
-  .react-flow__controls-button.active {
-    background: color-mix(in srgb, var(--ui-accent) 10%, transparent);
-    color: var(--ui-accent);
-  }
-  .react-flow__minimap {
-    border: 0;
-    border-radius: var(--panel-radius);
-    overflow: hidden;
-  }
-
-  /* Minimap nodes take the run status as a class, not a nodeColor prop: a
-     function prop resolves to an SVG fill attribute, which can't hold a var().
-     Same law as the cards and the wires: only what's happening gets a hue.
-     Done is solid ink — visited, settled — so the accent frontier and a
-     destructive break are the only colours on the map. */
-  .react-flow__minimap-node.st-running,
-  .react-flow__minimap-node.st-looping {
-    fill: var(--scenario-running);
-  }
-  .react-flow__minimap-node.st-done {
-    fill: color-mix(in srgb, var(--ui-base) 38%, transparent);
-  }
-  .react-flow__minimap-node.st-failed {
-    fill: var(--scenario-fail);
-  }
-
   /* ---------------- inspector (node detail view) ----------------
      n8n's panel discipline: a compact settings column — small controls, labels
      doing the explaining on hover, no prose between fields. The whole pane runs
      one type size down from the canvas: it's a form, not a document. */
-  .inspector {
-    padding: 0 !important;
-    width: 280px;
-  }
+  /* Surface, width, edge and entrance all come from SidePanel — this is only
+     the column inside it. It runs one type size down from the canvas because
+     it's a form, not a document. */
   .ins {
-    width: 280px;
-    max-height: calc(100vh - 120px);
     display: flex;
+    min-height: 0;
+    flex: 1;
     flex-direction: column;
     font-size: var(--fs-tool);
-    background: var(--scenario-glass);
-    backdrop-filter: blur(20px) saturate(1.6);
-    border: 0;
-    border-radius: var(--panel-radius);
-    overflow: hidden;
-    /* Enters downward from the top edge it's anchored to — same fade + small
-       travel + shadow-easing-in as every other panel (see .pop). */
-    --panel-enter-y: -8px;
-    animation: panel-in var(--dur-panel) var(--ease-glide) backwards;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ins {
-      animation-duration: 0.01ms;
-    }
-  }
-  .ins-head {
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 12px 5px;
   }
   .ins-headtext {
     min-width: 0;
@@ -1685,126 +1629,10 @@
     color: var(--ui-text-tertiary);
     margin-top: 1px;
   }
-  .ins-close {
-    background: transparent;
-    border: 0;
-    color: var(--ui-text-tertiary);
-    cursor: pointer;
-    font-size: var(--fs-caption);
-    width: 24px;
-    height: 24px;
-    display: grid;
-    place-items: center;
-    border-radius: var(--radius-lg);
-    transition:
-      background var(--dur-fast) var(--ease-out),
-      color var(--dur-fast) var(--ease-out);
-  }
-  .ins-close:hover {
-    color: var(--ui-text-primary);
-    background: var(--ui-control-hover-background);
-  }
-  /* The desktop's TextTab (components/ui/text-tab.tsx), not its dead Tabs
-     primitive: flat text, tertiary → foreground when active, underline at
-     4px offset in 25%-alpha current colour. No track, no pill, no shadow —
-     the app switches panes with words, and hover previews the underline. */
-  .ins-tabs {
-    flex: none;
-    display: flex;
-    gap: 12px;
-    margin: 0 14px 4px;
-    padding: 0;
-  }
-  .ins-tabs button {
-    background: transparent;
-    border: 0;
-    color: var(--ui-text-tertiary);
-    padding: 2px 0;
-    font-size: var(--fs-tool);
-    font-weight: 500;
-    cursor: pointer;
-    text-underline-offset: 4px;
-    text-decoration-color: color-mix(in srgb, currentColor 25%, transparent);
-    transition: color var(--dur-fast) var(--ease-out);
-  }
-  .ins-tabs button:hover:not(.on) {
-    color: var(--ui-text-primary);
-    text-decoration-line: underline;
-  }
-  .ins-tabs button.on {
-    color: var(--ui-text-primary);
-    text-decoration-line: underline;
-  }
-
-  .ins-body {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 4px 12px;
-  }
-
   /* Small controls, real gaps — density comes from control height, not from
      cramming rows together. n8n's panel breathes between fields. */
-  .ins .fld {
-    margin-bottom: 14px;
-  }
-  .ins .fld-label {
-    margin-bottom: 4px;
-    font-size: var(--fs-micro);
-  }
   .ins .fld-grid {
     gap: 8px;
-    margin-bottom: 14px;
-  }
-  .ins-scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    /* soft-fade edges ONLY when there's hidden content in that direction —
-       the fade sizes are driven by .fade-top / .fade-bottom (set on scroll). */
-    --fade-top: 0px;
-    --fade-bottom: 0px;
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      transparent 0,
-      #000 var(--fade-top),
-      #000 calc(100% - var(--fade-bottom)),
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      to bottom,
-      transparent 0,
-      #000 var(--fade-top),
-      #000 calc(100% - var(--fade-bottom)),
-      transparent 100%
-    );
-    transition:
-      --fade-top var(--dur-fast) var(--ease-out),
-      --fade-bottom var(--dur-fast) var(--ease-out);
-  }
-  .ins-scroll.fade-top {
-    --fade-top: 18px;
-  }
-  .ins-scroll.fade-bottom {
-    --fade-bottom: 18px;
-  }
-
-  /* editable fields — n8n-tight: 10px rhythm, hints only on hover (title=). */
-  .fld {
-    display: block;
-    margin-bottom: 10px;
-  }
-  .fld-hint {
-    display: block;
-    margin-top: 6px;
-    font-size: var(--fs-tool);
-    line-height: 1.45;
-    color: var(--ui-text-tertiary);
-  }
-  .fld-hint code {
-    font-size: var(--fs-badge);
-    color: var(--scenario-accent-text);
   }
 
   /* ---- routing rules ----
@@ -2002,12 +1830,6 @@
     outline: none;
     color: var(--ui-text-primary);
   }
-  /* Desktop's button focus (button.tsx): a 3px half-alpha ring, keyboard only. */
-  .ins-tabs button:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 0.1875rem color-mix(in srgb, var(--dt-ring) 50%, transparent);
-  }
-
   /* ---- structured output rows (data tab) ---- */
   .outlist {
     list-style: none;
@@ -2052,39 +1874,8 @@
   .out-obj-k {
     color: var(--ui-text-tertiary);
   }
-  .fld-label {
-    display: block;
-    font-size: var(--fs-tool);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--ui-text-tertiary);
-    margin-bottom: 5px;
-  }
-  .fld-label.inline {
-    text-transform: none;
-    letter-spacing: 0;
-    margin: 0;
-    font-size: var(--fs-tool);
-    color: var(--ui-text-secondary);
-  }
 
   /* data tab */
-  .ins-field {
-    margin-bottom: 12px;
-  }
-  .ins-label {
-    font-size: var(--fs-tool);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--ui-text-tertiary);
-    margin-bottom: 3px;
-  }
-  .ins-value {
-    font-size: var(--fs-caption);
-    color: var(--ui-text-primary);
-    word-break: break-word;
-    line-height: 1.45;
-  }
   .verdict-inline {
     text-transform: capitalize;
     font-weight: 600;
@@ -2099,22 +1890,6 @@
   .verdict-inline.status-looping {
     color: var(--scenario-running);
   }
-  .ins-sep {
-    display: flex;
-    align-items: center;
-    font-size: var(--fs-micro, 9px);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--ui-text-tertiary);
-    margin: 16px 0 10px;
-  }
-  .sep-count {
-    margin-left: auto;
-    letter-spacing: 0;
-    color: var(--scenario-accent-text);
-    font-variant-numeric: tabular-nums;
-  }
-
   /* plan — the subagent's todo list */
   .todolist {
     list-style: none;
@@ -2208,11 +1983,16 @@
   }
 
   /* ---------------- run panel: timeline transport + composer ---------------- */
+  /* React Flow centres a bottom-center Panel with left:50% + translateX(-50%),
+     so a negative margin of half the inspector re-centres it on the visible
+     canvas instead of sliding under the panel. */
   .run-panel {
     width: 620px;
-    max-width: calc(100vw - 320px);
+    max-width: calc(100vw - 320px - var(--wf-inspector));
+    margin-left: calc(var(--wf-inspector) / -2) !important;
     padding: 0 !important;
     overflow: hidden;
+    transition: margin-left var(--dur-fast) var(--ease-out);
   }
 
   /* The transport row rides the composer, so it wears the composer's own
@@ -2291,18 +2071,20 @@
   .tl-mark.m-fail {
     background: var(--scenario-fail);
   }
-  /* A real playhead: a grab-sized knob, not a hairline. */
+  /* A cursor, not a knob. A dot marks a spot; the thing this names is an
+     instant, and an instant on a track is a line across it. The hit area is the
+     track — you scrub by pressing anywhere on it — so the mark doesn't have to
+     be grab-sized, and at 2px it stops competing with the loop and fail
+     markers it has to be read against. */
   .tl-headline {
     position: absolute;
-    top: 4.5px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: var(--ui-bg-editor);
-    transform: translateX(-5px);
-    box-shadow:
-      0 0 0 1.5px var(--ui-text-primary),
-      var(--shadow-xs);
+    top: 2px;
+    width: 2px;
+    height: 15px;
+    border-radius: 1px;
+    background: var(--ui-text-primary);
+    transform: translateX(-1px);
+    box-shadow: 0 0 0 1.5px var(--scenario-card);
   }
 
   /* ---------------- composer ----------------
@@ -2373,170 +2155,6 @@
     animation-delay: 0.36s;
   }
 
-  /* ---------------- panels that pop out of the control rail ----------------
-     One entrance for every floating panel — the inspector included. A short
-     fade with a small slide along the edge the panel is anchored to, and the
-     elevation easing in from flat so it reads as being placed above the canvas.
-
-     Deliberately NO scale: scaling from a corner origin makes a panel look like
-     it's growing out of that corner rather than settling into place, which is
-     what made the inspector feel unlike everything else. Direction is the only
-     thing that varies, via --panel-enter-y: panels along the bottom rise, the
-     inspector along the top comes down. */
-  .pop {
-    --panel-enter-y: 8px;
-    animation: panel-in var(--dur-panel) var(--ease-glide) backwards;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .pop {
-      animation-duration: 0.01ms;
-    }
-  }
-
-  /* ---------------- panel stacking ----------------
-     React Flow positions each panel against the viewport independently, so
-     nothing stops them from landing on top of each other. --run-panel-h and
-     --rail-h are measured by useChromeMetrics(); everything that shares an edge
-     with those two stacks off the measurement instead of a magic number. */
-  & {
-    /* Fallbacks are first-paint only — the ResizeObserver overwrites both on
-       mount, before anything can overlap. */
-    --run-panel-h: 96px;
-    --rail-h: 84px;
-    --panel-gap: 12px;
-  }
-
-  /* The minimap sits directly above the control rail it pops out of. */
-  .react-flow__minimap {
-    bottom: calc(var(--rail-h) + var(--panel-gap)) !important;
-  }
-
-  /* The log clears the composer rather than covering its send button. */
-  .log-panel {
-    bottom: calc(var(--run-panel-h) + var(--panel-gap)) !important;
-  }
-
-  /* ---------------- event log (secondary — behind a control toggle) ---------------- */
-  .log-panel {
-    width: 372px;
-    padding: 0 !important;
-    overflow: hidden;
-  }
-  .feed-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 14px;
-    user-select: none;
-  }
-  .feed-title {
-    font-size: var(--fs-badge);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--ui-text-tertiary);
-  }
-  .feed-count {
-    font-size: var(--fs-badge);
-    color: var(--ui-text-tertiary);
-    background: var(--scenario-recess);
-    border: 0;
-    border-radius: 999px;
-    padding: 1px 8px;
-  }
-  .feed-x {
-    margin-left: auto;
-    background: transparent;
-    border: 0;
-    color: var(--ui-text-tertiary);
-    font-size: var(--fs-tool);
-    cursor: pointer;
-    padding: 0 2px;
-  }
-  .feed-x:hover {
-    color: var(--ui-text-primary);
-  }
-  .feed {
-    height: 208px;
-    overflow: auto;
-    padding: 0 14px 12px;
-    font-size: var(--fs-caption);
-  }
-  .feed-empty {
-    color: var(--ui-text-tertiary);
-    padding-top: 10px;
-  }
-  .feed-row {
-    display: flex;
-    align-items: baseline;
-    gap: 9px;
-    padding: 2px 0;
-    line-height: 1.5;
-  }
-  .feed-time {
-    color: var(--ui-text-tertiary);
-    flex: none;
-    font-variant-numeric: tabular-nums;
-  }
-  .feed-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--ui-text-tertiary);
-    flex: none;
-    align-self: center;
-  }
-  .feed-node {
-    color: var(--ui-text-secondary);
-    flex: none;
-    width: 78px;
-  }
-  .feed-msg {
-    color: var(--ui-text-primary);
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  /* an event the canvas synthesized — nothing on the engine's wire says it */
-  .feed-ext {
-    flex: none;
-    font-size: var(--fs-micro);
-    color: var(--ui-text-tertiary);
-    background: var(--scenario-recess);
-    border-radius: 3px;
-    padding: 0 5px;
-  }
-  .k-start .feed-dot {
-    background: var(--scenario-running);
-  }
-  .k-tool .feed-dot {
-    background: var(--ui-text-tertiary);
-  }
-  .k-tool .feed-msg {
-    color: var(--ui-text-secondary);
-  }
-  .k-ok .feed-dot {
-    background: var(--scenario-ok);
-  }
-  .k-ok .feed-msg {
-    color: var(--ui-text-primary);
-  }
-  .k-fail .feed-dot {
-    background: var(--scenario-fail);
-  }
-  .k-fail .feed-msg {
-    color: var(--ui-text-primary);
-  }
-  .k-loop .feed-dot {
-    background: var(--scenario-loop);
-  }
-  .k-loop .feed-msg {
-    color: var(--ui-text-primary);
-  }
-  .k-data .feed-dot {
-    background: var(--scenario-gate);
-  }
-  .k-data .feed-msg {
-    color: var(--scenario-gate);
-  }
   .ask {
     position: fixed;
     z-index: 21;

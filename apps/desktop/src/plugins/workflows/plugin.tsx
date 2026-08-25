@@ -26,6 +26,7 @@ import {
   type SidebarNavContribution
 } from '@hermes/plugin-sdk'
 
+import { bindDocuments } from './documents'
 import WorkflowsPage from './page'
 
 const PATH = '/workflows'
@@ -36,6 +37,8 @@ const plugin: HermesPlugin = {
   description: 'Node canvas for agent scenarios — author a graph of steps, gates and approvals, then run it.',
   defaultEnabled: false,
   register(ctx) {
+    ctx.onDispose(bindDocuments(ctx.storage))
+
     ctx.registerMany([
       {
         id: 'page',

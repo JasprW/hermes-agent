@@ -541,3 +541,20 @@ export interface Scenario {
   steps: ScenarioStep[]
   edges: EdgeDef[]
 }
+
+/** The figma → code → review → PR scenario the plugin ships with, as a value.
+ *  Offered on the empty state alongside a blank one, because a graph you can
+ *  take apart teaches the schema faster than an empty canvas does. */
+export const starterScenario = (): Scenario => ({
+  version: 1,
+  steps: STEP_DEFS.map(def => ({ id: def.id, kind: def.kind, config: defaultConfig(def), icon: def.icon })),
+  edges: EDGE_DEFS
+})
+
+/** One step, because `setScenario` refuses a scenario with none and a truly
+ *  empty canvas gives the author nothing to click. */
+export const blankScenario = (): Scenario => ({
+  version: 1,
+  steps: [{ id: 'start', kind: 'agent', config: defaultConfig({ id: 'start', kind: 'agent', title: 'First step' }) }],
+  edges: []
+})

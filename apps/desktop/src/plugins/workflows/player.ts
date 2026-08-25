@@ -77,6 +77,14 @@ export interface Player {
   pauseState: PauseState
   /** Set while the run is parked on a person. */
   asking: Question | null
+  /** The parked question is off screen — hidden, not answered. Lives here
+   *  rather than in the view because the run is what's blocked by it: the
+   *  transport has to know that "carry on" means "bring the question back". */
+  deferred: boolean
+  /** Put the question away to go look at the graph. The run stays parked. */
+  defer: () => void
+  /** Bring a deferred question back. */
+  reveal: () => void
   /** Answer the parked question and let the run move again. */
   respond: (decision: 'approved' | 'denied') => void
   /** Event timestamp the view is frozen at, or null while live. */
@@ -126,6 +134,7 @@ export function usePlayer(planOf: () => RunPlan): Player {
   const [asking, setAsking] = useState<Question | null>(null)
   const askingRef = useRef<Question | null>(null)
   const askAtRef = useRef(0) // index of the HumanWaiting we're parked on
+  const [deferred, setDeferred] = useState(false)
 
   const stop = useCallback(() => {
     if (timerRef.current != null) {
@@ -140,9 +149,12 @@ export function usePlayer(planOf: () => RunPlan): Player {
     setPauseState(s)
   }
 
+  // Every arrival and every clearing goes through here, so a deferral can
+  // never outlive the question it was about.
   const ask = (q: Question | null) => {
     askingRef.current = q
     setAsking(q)
+    setDeferred(false)
   }
 
   const append = (step: TimelineStep, seq: number, payload?: object) =>
@@ -310,6 +322,15 @@ export function usePlayer(planOf: () => RunPlan): Player {
   )
 
   const requestPause = useCallback(() => {
+    // Parked on a person, so there is nothing in flight to pause — and the
+    // pump won't be re-entered until the question is answered, which is the
+    // only place 'pausing' ever resolves. Accepting the request here left the
+    // transport pulsing on "pausing" with no way out but a restart, and it's
+    // the first thing you reach for after putting the dialog away.
+    if (askingRef.current) {
+      return
+    }
+
     if (timerRef.current == null) {
       return
     } // no run in flight
@@ -432,6 +453,9 @@ export function usePlayer(planOf: () => RunPlan): Player {
     running,
     pauseState,
     asking,
+    deferred,
+    defer: useCallback(() => setDeferred(true), []),
+    reveal: useCallback(() => setDeferred(false), []),
     respond,
     frozenAt: head == null ? null : (events[effHead - 1]?.ts ?? null),
     start,

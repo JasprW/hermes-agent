@@ -34,21 +34,25 @@ const hits = (n: Node, at: XYPosition) =>
  *  there, step one rank right until it doesn't. A small diagonal cascade isn't
  *  enough — 28px still leaves the new card inside the old one. This is the rule
  *  for a card you DROPPED, where you chose the y and only the x may give. */
-export function freeSpot(nodes: Node[], at: XYPosition): XYPosition {
+export function freeSpot(nodes: Node[], at: XYPosition, dir: FlowDir = DEFAULT_DIR): XYPosition {
   const spot = { ...at }
 
   for (let i = 0; i < 40 && nodes.some(n => hits(n, spot)); i++) {
-    spot.x += STEP
+    if (dir === 'TB') {
+      spot.y += FALLBACK_H + RANK_GAP
+    } else {
+      spot.x += STEP
+    }
   }
 
   return spot
 }
 
 /** The rule for a card WIRED to another: its rank is decided by the wire, so
- *  the column is fixed and it settles downward past its siblings instead.
- *  Marching it rightward would push a validator past the steps it feeds and
- *  lose the left-to-right reading the ranks exist to give. */
-export function freeRow(nodes: Node[], at: XYPosition): XYPosition {
+ *  the rank is fixed and it settles ACROSS past its siblings instead. Marching
+ *  it along the flow would push a validator past the steps it feeds and lose
+ *  the reading the ranks exist to give. */
+export function freeRow(nodes: Node[], at: XYPosition, dir: FlowDir = DEFAULT_DIR): XYPosition {
   const spot = { ...at }
 
   for (let i = 0; i < 40; i++) {
@@ -58,13 +62,26 @@ export function freeRow(nodes: Node[], at: XYPosition): XYPosition {
       break
     }
 
-    spot.y = clash.position.y + heightOf(clash) / 2 + FALLBACK_H / 2 + ORPHAN_GAP
+    if (dir === 'TB') {
+      spot.x = clash.position.x + widthOf(clash) + ORPHAN_GAP
+    } else {
+      spot.y = clash.position.y + heightOf(clash) / 2 + FALLBACK_H / 2 + ORPHAN_GAP
+    }
   }
 
   return spot
 }
 
-export function tidyLayout(nodes: Node[], edges: Edge[], dir: 'LR' | 'TB' = 'LR'): Node[] {
+/** Which way the ranks run. Dagre's `rankdir` verbatim — the canvas doesn't
+ *  have a second word for it. */
+export type FlowDir = 'LR' | 'TB'
+
+/** Top to bottom, because a workflow is a list of steps before it's a diagram
+ *  and that's the direction a list is read in. The pane is also taller than it
+ *  is wide once the inspector opens, so the ranks have further to run. */
+export const DEFAULT_DIR: FlowDir = 'TB'
+
+export function tidyLayout(nodes: Node[], edges: Edge[], dir: FlowDir = DEFAULT_DIR): Node[] {
   const wired = new Set<string>()
 
   for (const e of edges) {

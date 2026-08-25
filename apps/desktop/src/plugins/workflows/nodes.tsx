@@ -2,8 +2,10 @@ import { Codicon, GlyphSpinner, type SpinnerName } from '@hermes/plugin-sdk'
 import { Handle, type NodeProps, Position, type ReactFlowState, useStore, useUpdateNodeInternals } from '@xyflow/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { useFlowDir, usePorts } from './direction'
 import { armLabel } from './graph'
 import { KindMark, kindMarkOf } from './kind-mark'
+import type { FlowDir } from './layout'
 import { stepLink, type StepRuntime } from './protocol'
 import { type Arm, NEW_BRANCH, type StepConfig, type StepDef, WAIT_KIND_OPTIONS } from './scenario'
 
@@ -82,6 +84,12 @@ function useCardGeometry(nodeId: string, raised: boolean) {
   const update = useUpdateNodeInternals()
   const ref = useRef<HTMLDivElement>(null)
   const first = useRef(true)
+  const dir = useFlowDir()
+
+  // Which side a handle sits on is cached in React Flow's node internals, not
+  // read from the DOM each render — so flipping the flow re-renders the card
+  // with its ports on the other edge while every wire still leaves the old one.
+  useEffect(() => update(nodeId), [dir, nodeId, update])
 
   // eslint-disable-next-line no-restricted-syntax -- `first` is a mount flag, not a mirrored atom.
   useEffect(() => {
@@ -484,21 +492,33 @@ function BackPort({ id }: { id: string }) {
     useCallback((s: ReactFlowState) => s.edges.some(e => e.target === id && e.targetHandle === 'loopback'), [id])
   )
 
+  const vertical = useFlowDir() === 'TB'
+
+  // It sits on whichever face the flow ISN'T using, so a rework wire never
+  // shares an edge with the forward one.
   return (
     <Handle
       className={`handle-back${wired ? ' is-wired' : ''}`}
       id="loopback"
-      position={Position.Bottom}
-      style={{ left: '32%' }}
+      position={vertical ? Position.Left : Position.Bottom}
+      style={vertical ? { top: '32%' } : { left: '32%' }}
       type="target"
     />
   )
 }
 
+/** The card shell's class list. Both node components render the same outer
+ *  div, and a hook added to one and not the other is a bug that only shows on
+ *  one kind of card. */
+const cardClass = (kind: string, dir: FlowDir, rt: StepRuntime, selected?: boolean) =>
+  `node ${kind} dir-${dir.toLowerCase()} status-${rt.status}${rt.skipped ? ' skipped' : ''}${selected ? ' sel' : ''}`
+
 // ---- Worker node (agent or human) --------------------------------------------
 export function AgentNode({ id, data }: NodeProps) {
   const { def, config, rt, selected, frozenAt } = data as unknown as NodeData
   const elapsed = useElapsed(rt, frozenAt)
+  const dir = useFlowDir()
+  const ports = usePorts()
 
   // Must match the CSS raised set exactly, or the edges re-measure at the
   // wrong moments.
@@ -508,16 +528,13 @@ export function AgentNode({ id, data }: NodeProps) {
   )
 
   return (
-    <div
-      className={`node ${def.kind} status-${rt.status}${rt.skipped ? ' skipped' : ''}${selected ? ' sel' : ''}`}
-      ref={ref}
-    >
+    <div className={cardClass(def.kind, dir, rt, selected)} ref={ref}>
       {/* Every step carries the full set. These used to be conditional on two
           hardcoded seed ids — the first step had no input and the last had no
           output — so the head of the flow could never be fed and nothing could
           ever be wired after the tail. Which step is first or last is a fact
           about the wiring, not about the card, and the card was enforcing it. */}
-      <Handle id="in" position={Position.Left} type="target" />
+      <Handle id="in" position={ports.target} type="target" />
       <BackPort id={id} />
 
       <NodeArc status={rt.status} />
@@ -527,7 +544,7 @@ export function AgentNode({ id, data }: NodeProps) {
 
       <NodeMeta config={config} elapsed={elapsed} rt={rt} />
 
-      <Handle id="out" position={Position.Right} type="source" />
+      <Handle id="out" position={ports.source} type="source" />
     </div>
   )
 }
@@ -564,6 +581,7 @@ function GatePorts({ id, arms }: { id: string; arms: Arm[] }) {
   )
 
   const plugged = new Set(wired ? wired.split(',') : [])
+  const ports = usePorts()
 
   return (
     <div className="node-ports">
@@ -580,18 +598,13 @@ function GatePorts({ id, arms }: { id: string; arms: Arm[] }) {
                 stretch of the loop was hidden behind the gate and the wire read
                 as coming from nowhere. It leaves at its dot now and does the
                 U-turn in open canvas. */}
-            <Handle
-              id={arm.id}
-              position={Position.Right}
-              type="source"
-              {...(loop ? { className: 'handle-loop' } : {})}
-            />
+            <Handle id={arm.id} position={ports.source} type="source" {...(loop ? { className: 'handle-loop' } : {})} />
           </div>
         )
       })}
       <div className="port-row is-spare">
         <span className="port-label">+</span>
-        <Handle id={NEW_BRANCH} position={Position.Right} type="source" />
+        <Handle id={NEW_BRANCH} position={ports.source} type="source" />
       </div>
     </div>
   )
@@ -602,13 +615,12 @@ export function GateNode({ id, data }: NodeProps) {
   const { def, config, rt, selected, frozenAt } = data as unknown as NodeData
   const elapsed = useElapsed(rt, frozenAt)
   const ref = useCardGeometry(id, !!selected || rt.status === 'running' || rt.status === 'looping')
+  const dir = useFlowDir()
+  const ports = usePorts()
 
   return (
-    <div
-      className={`node ${def.kind} status-${rt.status}${rt.skipped ? ' skipped' : ''}${selected ? ' sel' : ''}`}
-      ref={ref}
-    >
-      <Handle id="in" position={Position.Left} type="target" />
+    <div className={cardClass(def.kind, dir, rt, selected)} ref={ref}>
+      <Handle id="in" position={ports.target} type="target" />
       <BackPort id={id} />
       <NodeArc status={rt.status} />
       <NodeHead config={config} def={def} rt={rt} />
@@ -618,7 +630,7 @@ export function GateNode({ id, data }: NodeProps) {
         <GatePorts arms={config.arms ?? []} id={id} />
       ) : (
         // A wait step doesn't branch — one wire out, like a worker.
-        <Handle id="out" position={Position.Right} type="source" />
+        <Handle id="out" position={ports.source} type="source" />
       )}
     </div>
   )

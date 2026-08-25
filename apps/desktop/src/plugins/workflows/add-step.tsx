@@ -2,7 +2,7 @@ import { type Edge, type Node, useStore, type XYPosition } from '@xyflow/react'
 import { createContext, useContext, useEffect } from 'react'
 
 import { KindMark } from './kind-mark'
-import { CARD_W, freeSpot, RANK_GAP, widthOf } from './layout'
+import { CARD_W, DEFAULT_DIR, type FlowDir, freeSpot, RANK_GAP, widthOf } from './layout'
 import { type NodeData } from './nodes'
 import { type EdgeState, freshRuntime } from './protocol'
 import { defaultConfig, STEP_KINDS, type StepDef, type StepKind } from './scenario'
@@ -80,10 +80,16 @@ function selectOnly(nodes: Node[], id: string): Node[] {
 }
 
 /** The graph after adding a step, plus which step to select. Pure. */
-export function addStep(nodes: Node[], edges: Edge[], where: AddAt, kind: StepKind = 'agent'): AddedStep {
+export function addStep(
+  nodes: Node[],
+  edges: Edge[],
+  where: AddAt,
+  kind: StepKind = 'agent',
+  dir: FlowDir = DEFAULT_DIR
+): AddedStep {
   if (where.on === 'canvas') {
     // x is a left edge and y is a centre, per the canvas's nodeOrigin.
-    const at = freeSpot(nodes, { x: where.at.x - CARD_W / 2, y: where.at.y })
+    const at = freeSpot(nodes, { x: where.at.x - CARD_W / 2, y: where.at.y }, dir)
     const node = mint(nodes, at, kind)
 
     return { nodes: selectOnly([...nodes, node], node.id), edges, id: node.id }

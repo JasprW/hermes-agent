@@ -1,18 +1,23 @@
-// The composer's agent, faked.
+// The composer's turn engine.
 //
-// The ONE thing this file must get right is its output shape: it returns TOOL
+// The ONE thing this file must get right is its output shape: it produces TOOL
 // CALLS, never mutations. Everything it decides is expressed as
-// `{ name: "graph_connect", args: {...} }` and handed to the same dispatcher a
-// real model's tool calls would go through. That keeps the seam honest — the
-// place a provider drops in is `interpret`, and nothing downstream of it
-// knows or cares that today's planner is a pile of regexes.
+// `{ name: "graph_connect", args: {...} }` and handed to `callTool` — the same
+// dispatcher the inspector and the canvas go through. An agent edit and a hand
+// edit are the same operation on the same document, and nothing downstream
+// knows which one it was.
 //
-// So: no setNodes here, no graph objects returned, no privileged knowledge of
-// this particular scenario. It reads the live graph only to resolve names the
-// way a model would after calling graph_get.
+// The model gets `GRAPH_TOOLS` verbatim as its contract and the open scenario
+// as its context, so it is describing the graph in the same schema the canvas
+// stores it in. What comes back is applied, validated, and — if the model
+// authored something the schema says is broken — handed back once with the
+// problems attached. That repair round is the difference between "generates a
+// workflow" and "generates a workflow that runs".
 
-import { type Graph, resolveStep, stepNodes } from './graph'
-import type { ToolArgs } from './graph-tools'
+import { host } from '@hermes/plugin-sdk'
+
+import { type Graph, type OpResult, resolveStep, stepNodes, toScenario, validate } from './graph'
+import { callTool, GRAPH_TOOLS, type RunControl, type ToolArgs } from './graph-tools'
 import { MODEL_OPTIONS, ON_FAIL_OPTIONS, PROFILES, type StepKind, type WaitUntil } from './scenario'
 
 export interface PlannedCall {
@@ -20,11 +25,193 @@ export interface PlannedCall {
   args: ToolArgs
 }
 
-export interface Plan {
-  calls: PlannedCall[]
-  /** Said instead of running anything — used when nothing matched. */
-  reply?: string
+export interface TurnResult {
+  graph: Graph
+  reply: string
+  /** One-line summary of what changed, shown as an applied-edit chip. */
+  edit?: string
+  focus?: string
 }
+
+// ---------------------------------------------------------------------------
+// The contract
+// ---------------------------------------------------------------------------
+
+/** What the model is told it is and what it may do. The tool list is the same
+ *  JSON Schema the descriptors already publish, so there is exactly one
+ *  definition of the surface and it can't drift from what `callTool` accepts. */
+const CONTRACT = [
+  'You edit agent workflows on a node canvas. A workflow is a graph of steps —',
+  'agent (a model does the work), human (a person does, and the run parks),',
+  'gate (branches on what already happened), wait (holds for the world).',
+  '',
+  'Reply with ONLY a JSON array of tool calls, each `{"tool": name, "args": {...}}`.',
+  'No prose, no markdown fence. An empty array means you have nothing to do.',
+  '',
+  'Rules that keep a graph runnable:',
+  '- Every step must be reachable from a step with no inputs.',
+  '- A gate needs at least two outputs, and one of them must be `always` —',
+  '  the catch-all, added last, or some verdicts route nowhere.',
+  '- Only a gate may start a rework loop; a loop from anything else never runs.',
+  '- Every agent and human step needs a goal. Every wait needs an `until`.',
+  '- Prefer the surgical tools for a change to an existing graph, and',
+  '  `graph_set_scenario` only when authoring a whole workflow at once.',
+  '',
+  `Profiles: ${PROFILES.join(', ')}. Models: ${MODEL_OPTIONS.join(', ')}.`,
+  `On failure: ${ON_FAIL_OPTIONS.map(o => o.value).join(', ')}.`,
+  '',
+  'Tools:',
+  JSON.stringify(GRAPH_TOOLS)
+].join('\n')
+
+/** One model call. Kept separate from the loop below so the repair round is
+ *  visibly the same call with more context, not a second code path. */
+async function ask(input: string): Promise<PlannedCall[]> {
+  const { text } = await host.request<{ text?: string }>('llm.oneshot', {
+    instructions: CONTRACT,
+    input,
+    temperature: 0.2,
+    max_tokens: 4096
+  })
+
+  return parseCalls(text ?? '')
+}
+
+/** Models fence JSON however they like. Take the outermost array and ignore
+ *  everything around it rather than failing a good plan over a stray sentence. */
+function parseCalls(text: string): PlannedCall[] {
+  const start = text.indexOf('[')
+  const end = text.lastIndexOf(']')
+
+  if (start < 0 || end <= start) {
+    return []
+  }
+
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1))
+  } catch {
+    return []
+  }
+
+  if (!Array.isArray(parsed)) {
+    return []
+  }
+
+  const known = new Set(GRAPH_TOOLS.map(t => t.name))
+
+  return parsed
+    .map(c => c as { tool?: unknown; name?: unknown; args?: unknown })
+    .map(c => ({
+      name: typeof c.tool === 'string' ? c.tool : typeof c.name === 'string' ? c.name : '',
+      args: (c.args ?? {}) as ToolArgs
+    }))
+    .filter(c => known.has(c.name))
+}
+
+/** The graph as the model sees it. The whole scenario, because the tools
+ *  address steps by id and it can't invent ids it hasn't been shown. */
+const describe = (g: Graph) => JSON.stringify(toScenario(g))
+
+// ---------------------------------------------------------------------------
+// A turn
+// ---------------------------------------------------------------------------
+
+/** Run one composer turn against the graph.
+ *
+ *  Plan, apply, validate, and if the result is broken, hand the problems back
+ *  for one repair round. One round, not a loop: a model that can't fix its own
+ *  output given the exact complaint won't fix it on the fourth try either, and
+ *  the author is sitting there watching. */
+export async function runTurn(text: string, graph: Graph, run: RunControl): Promise<TurnResult> {
+  // A throw (no gateway, no model, a refusal) and an empty plan land in the
+  // same place: the built-in planner, which covers the common single-verb asks
+  // so the canvas stays usable with the gateway down.
+  let calls = await ask(`Open workflow:\n${describe(graph)}\n\nAsk:\n${text}`).catch((): PlannedCall[] => [])
+
+  if (!calls.length) {
+    calls = interpret(text, graph)
+  }
+
+  if (!calls.length) {
+    return {
+      graph,
+      reply:
+        'I can build it, run it, or change it — try “add a lint step between implement and gate”, ' +
+        '“connect judge to ship”, “make the visual judge blind”, “allow 3 takes”, “check it”, or “run it”.'
+    }
+  }
+
+  const first = apply(graph, run, calls)
+
+  // Only worth repairing what the model just authored, and only when the
+  // schema calls it an error — a warning is a note about an unfinished graph,
+  // which is a perfectly reasonable thing to be handed mid-edit.
+  const broken = validate(first.graph).filter(p => p.level === 'error')
+
+  if (!broken.length || first.graph === graph) {
+    return first
+  }
+
+  try {
+    const fixes = await ask(
+      `Workflow you just produced:\n${describe(first.graph)}\n\n` +
+        `It doesn't run. Fix exactly these, changing nothing else:\n` +
+        broken.map(p => `- ${p.message}`).join('\n')
+    )
+
+    if (fixes.length) {
+      const repaired = apply(first.graph, run, fixes)
+
+      return { ...repaired, reply: first.reply, edit: repaired.edit ?? first.edit }
+    }
+  } catch {
+    // Keep the first pass. A graph with a known problem beats no graph, and
+    // the inspector already shows what's wrong with it.
+  }
+
+  return first
+}
+
+/** Run a plan, folding each tool's result into the next call's graph. */
+function apply(graph: Graph, run: RunControl, calls: PlannedCall[]): TurnResult {
+  let next = graph
+  const said: string[] = []
+  const edits: string[] = []
+  let focus: string | undefined
+
+  for (const c of calls) {
+    const op: OpResult = callTool(next, run, c.name, c.args)
+    said.push(op.message)
+
+    if (!op.ok) {
+      continue
+    }
+
+    if (op.edit) {
+      edits.push(op.edit)
+    }
+
+    if (op.focus) {
+      focus = op.focus
+    }
+
+    next = op.graph
+  }
+
+  return { graph: next, reply: said.join(' '), edit: edits.join(', ') || undefined, focus }
+}
+
+// ---------------------------------------------------------------------------
+// Offline planner
+//
+// The fallback when there's no model to ask: a pile of regexes over the single
+// verb the sentence leads with. It reads the live graph only to resolve names,
+// the way a model would after calling graph_get, and it emits the same tool
+// calls — so the seam stays honest and the canvas is usable with the gateway
+// down.
+// ---------------------------------------------------------------------------
 
 const KIND_WORDS: [RegExp, StepKind][] = [
   [/\bgate\b|\bbranch\b|\brouter?\b|\bdecision\b/, 'gate'],
@@ -143,12 +330,12 @@ const num = (t: string, re: RegExp) => {
   return m ? Number(m[1]) : undefined
 }
 
-export function interpret(text: string, g: Graph): Plan {
+export function interpret(text: string, g: Graph): PlannedCall[] {
   // Matching happens against the downcased sentence; names are read from the
   // original, so a step the author called "Legal Review" keeps its capitals.
   const raw = text.trim()
   const t = raw.toLowerCase()
-  const call = (name: string, args: ToolArgs = {}): Plan => ({ calls: [{ name, args }] })
+  const call = (name: string, args: ToolArgs = {}): PlannedCall[] => [{ name, args }]
   const names = mentioned(g, t)
   // Unqualified "make it blind" means the step the sentence named, and failing
   // that the first one — the planner knows nothing about which scenario is open.
@@ -285,12 +472,12 @@ export function interpret(text: string, g: Graph): Plan {
       args.goal = 'Run the linter and the type checker on the diff. Return PASS/FAIL with the failing rules.'
     }
 
-    return { calls: [{ name: 'graph_add_step', args }] }
+    return [{ name: 'graph_add_step', args }]
   }
 
   // ---- config ------------------------------------------------------------
   const step = target()
-  const patch = (p: ToolArgs): Plan => call('graph_update_step', { step, patch: p })
+  const patch = (p: ToolArgs): PlannedCall[] => call('graph_update_step', { step, patch: p })
 
   if (/\bblind\b/.test(t)) {
     return patch({ blind: !/\b(not|no longer|un)\s*blind\b|\bsighted\b/.test(t) })
@@ -352,12 +539,7 @@ export function interpret(text: string, g: Graph): Plan {
     return patch({ timeoutMins: timeout })
   }
 
-  return {
-    calls: [],
-    reply:
-      'I can build it, run it, or change it — try “add a lint step between implement and gate”, ' +
-      '“connect judge to ship”, “make the visual judge blind”, “allow 3 takes”, “check it”, or “run it”.'
-  }
+  return []
 }
 
 function kindOf(g: Graph, ref: string): StepKind | undefined {
