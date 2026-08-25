@@ -1202,6 +1202,10 @@ export {
 
 // -- ui: the design language --------------------------------------------------
 
+/** The composer control row's button vocabulary — a ghost icon for the
+ *  secondary controls, a solid circle for the one primary action. Wear these on
+ *  any control that rides the composer so a plugin's row reads as the same row. */
+export { ACTIVE_ICON_BTN, GHOST_ICON_BTN, ICON_BTN, PRIMARY_ICON_BTN } from '@/app/chat/composer/control-classes'
 export { PALETTE_AREA, type PaletteContribution } from '@/app/command-palette/contrib'
 export { type RouteContribution, ROUTES_AREA, SIDEBAR_NAV_AREA, type SidebarNavContribution } from '@/app/routes'
 /** THE full per-toolset config panel core Settings renders — provider picker,
@@ -1222,8 +1226,8 @@ export {
   type ModelMenuController
 } from '@/app/shell/model-catalog-menu'
 export type { StatusbarItem } from '@/app/shell/statusbar-controls'
-export type { TitlebarTool } from '@/app/shell/titlebar-controls'
 
+export type { TitlebarTool } from '@/app/shell/titlebar-controls'
 /** THE whole Capabilities surface (Skills / Tools / MCP tabs, installed
  *  lists, full-skill detail pane, embedded hub picker with one-click
  *  installs). For plugin dialogs pass `embedded` (tab state stays local —
@@ -1239,6 +1243,17 @@ export { SkillsView } from '@/app/skills'
  *  renders anywhere (a plugin dialog); pass a live `gateway` (see
  *  `host.getGateway()`) and an optional `profile` to scope it to one bot. */
 export { McpTab } from '@/app/skills/mcp-tab'
+/** The composer's own chrome, so a plugin surface that carries an input can
+ *  wear the real one instead of approximating it. `composerDockCard('top')` is
+ *  the card that fuses above the composer (the status stack uses it). */
+export {
+  composerDockCard,
+  composerFill,
+  composerFloatingPill,
+  composerFloatingStrip,
+  composerPanelCard,
+  composerSurfaceGlass
+} from '@/components/chat/composer-dock'
 /** Pane placement roles. `'floating'` is the one NON-tiling value: the pane is
  *  excluded from the layout tree and rendered as a fixed, draggable card above
  *  it — it takes no width from any zone, has no tab, and can't be docked.
@@ -1258,6 +1273,9 @@ export {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from '@/components/ui/context-menu'
+/** The form-control chrome Input/Textarea/SelectTrigger share — for the
+ *  composite controls (steppers, tag fields) the kit doesn't ship. */
+export { type ControlVariantProps, controlVariants } from '@/components/ui/control'
 export { CopyButton } from '@/components/ui/copy-button'
 export { DecodeText } from '@/components/ui/decode-text'
 export {
@@ -1279,7 +1297,7 @@ export {
 export { EmptyState } from '@/components/ui/empty-state'
 export { ErrorState } from '@/components/ui/error-state'
 export { FadeScroll } from '@/components/ui/fade-scroll'
-export { GlyphSpinner } from '@/components/ui/glyph-spinner'
+export { GlyphSpinner, type SpinnerName } from '@/components/ui/glyph-spinner'
 export { Input } from '@/components/ui/input'
 export { Kbd, KbdGroup } from '@/components/ui/kbd'
 /** The app's canonical loader (animated curves; `lemniscate-bloom` for long
@@ -1290,7 +1308,15 @@ export { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export { ScrollArea } from '@/components/ui/scroll-area'
 export { SearchField } from '@/components/ui/search-field'
 export { SegmentedControl } from '@/components/ui/segmented-control'
-export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+export {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 export { Separator } from '@/components/ui/separator'
 export { Skeleton } from '@/components/ui/skeleton'
 export { Switch } from '@/components/ui/switch'
