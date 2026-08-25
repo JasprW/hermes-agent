@@ -1410,13 +1410,6 @@
   .react-flow__edge .edge-loop-line.edge-hot {
     opacity: 1;
   }
-  /* A wire runs behind the cards it passes; its toolbar must not. Lifting the
-     whole edge layer while one is hovered is what n8n does, and it's the only
-     way the buttons clear a neighbouring card. */
-  .react-flow:has(.edge-hot) .react-flow__edges {
-    z-index: 6;
-  }
-
   /* The wire's toolbar: a bead at rest, insert-a-step and cut on hover.
      Something has to be present at rest, because an affordance you only find by
      hovering the right 1px of line isn't one — but a + on every hop was a row of
@@ -1430,11 +1423,22 @@
      flow, so the bead and the buttons occupy the same point and neither one's
      size can shift the other.
 
-     Above the edge layer, or the wire's own hit stroke swallows the click that
-     was aimed at the button sitting on top of it. */
+     This is the ONLY part of a wire allowed above the cards, and the z-index
+     is what puts it there. It rides in React Flow's edge-label layer, which is
+     a separate div from the edges <svg> — so the toolbar clears a neighbouring
+     card on its own, and the wires never have to. Lifting the whole edge layer
+     on hover, which is what this used to do, drew every line over every card
+     it crossed.
+
+     1001 because React Flow's `elevateNodesOnSelect` puts the SELECTED card at
+     1000, and the buttons on the wire you're pointing at have to be reachable
+     over it. Nothing escapes: `.react-flow__viewport` has a transform, so it's
+     a stacking context, and the app's own panels sit outside it. Being above
+     the edges matters too, or the wire's own hit stroke swallows the click
+     aimed at the button sitting on top of it. */
   .edge-tools {
     position: absolute;
-    z-index: 6;
+    z-index: 1001;
     width: 0;
     height: 0;
     pointer-events: none;
