@@ -9893,6 +9893,48 @@ def _derive_forum_thread_name(message: str) -> str:
     return first_line[:100]
 
 
+async def _standalone_resolve_forum_tags(
+    chat_id: str,
+    tags: Optional[list],
+    json_headers: dict,
+    sess_kw: dict,
+    req_kw: dict,
+) -> list:
+    """Map forum tag names to Discord tag IDs for forum thread creation.
+
+    Unknown tag names are ignored; lookup failures return an empty list so a
+    tag-resolution hiccup never blocks the post itself.
+    """
+    if not tags:
+        return []
+    wanted = {str(t).strip() for t in tags if str(t).strip()}
+    if not wanted:
+        return []
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=15), **sess_kw
+        ) as sess:
+            async with sess.get(
+                f"https://discord.com/api/v10/channels/{chat_id}",
+                headers=json_headers,
+                **req_kw,
+            ) as resp:
+                if resp.status != 200:
+                    return []
+                info = await _standalone_read_json_limited(
+                    resp, _DISCORD_STANDALONE_JSON_BODY_LIMIT_BYTES
+                )
+    except Exception:
+        logger.debug("Failed to resolve forum tags for %s", chat_id, exc_info=True)
+        return []
+    ids = []
+    for avail in (info or {}).get("available_tags") or []:
+        if avail.get("name") in wanted:
+            ids.append(avail.get("id"))
+    return ids
+
+
 def _standalone_sanitize_error(text) -> str:
     """Local copy of tools.send_message_tool._sanitize_error_text — strips bot
     tokens from any error payload before bubbling it up.  Inlined so the
@@ -9994,6 +10036,8 @@ async def _standalone_send(
     media_files: Optional[list] = None,
     force_document: bool = False,
     caption: Optional[str] = None,
+    title: Optional[str] = None,
+    tags: Optional[list] = None,
 ) -> Dict[str, Any]:
     """Send via Discord REST API without a live gateway adapter.
 
@@ -10078,8 +10122,12 @@ async def _standalone_send(
                         logger.debug("Failed to probe channel type for %s", chat_id, exc_info=True)
 
             if is_forum:
-                thread_name = _derive_forum_thread_name(message)
+                thread_name = (title or "").strip() or _derive_forum_thread_name(message)
+                thread_name = thread_name[:100]
                 thread_url = f"https://discord.com/api/v10/channels/{chat_id}/threads"
+                tag_ids = await _standalone_resolve_forum_tags(
+                    chat_id, tags, json_headers, _sess_kw, _req_kw
+                )
 
                 # Filter to readable media files up front so we can pick the
                 # right code path (JSON vs multipart) before opening a session.
@@ -10102,7 +10150,10 @@ async def _standalone_send(
                             for idx, path in enumerate(valid_media)
                         ]
                         starter_message = {"content": (caption or message), "attachments": attachments_meta}
-                        payload_json = json.dumps({"name": thread_name, "message": starter_message})
+                        thread_payload = {"name": thread_name, "message": starter_message}
+                        if tag_ids:
+                            thread_payload["applied_tags"] = tag_ids
+                        payload_json = json.dumps(thread_payload)
 
                         form = aiohttp.FormData()
                         form.add_field("payload_json", payload_json, content_type="application/json")
@@ -10131,13 +10182,13 @@ async def _standalone_send(
                     else:
                         # No media — simple JSON POST creates the thread with
                         # just the text starter.
+                        thread_payload = {"name": thread_name, "message": {"content": message}}
+                        if tag_ids:
+                            thread_payload["applied_tags"] = tag_ids
                         async with session.post(
                             thread_url,
                             headers=json_headers,
-                            json={
-                                "name": thread_name,
-                                "message": {"content": message},
-                            },
+                            json=thread_payload,
                             **_req_kw,
                         ) as resp:
                             if resp.status not in {200, 201}:

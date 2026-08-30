@@ -1100,17 +1100,27 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
                 return result
             return result
         last_result = None
+        # Forum channels: the first chunk creates the thread; capture its
+        # returned thread_id so follow-up chunks stay inside that same post
+        # instead of each spawning a new top-level forum thread.
+        thread_id_for_chunks = thread_id
         for i, chunk in enumerate(chunks):
             is_last = (i == len(chunks) - 1)
             result = await entry.standalone_sender_fn(
                 pconfig,
                 chat_id,
                 chunk,
-                thread_id=thread_id,
+                thread_id=thread_id_for_chunks,
                 media_files=media_files if is_last else [],
             )
             if isinstance(result, dict) and result.get("error"):
                 return result
+            if (
+                isinstance(result, dict)
+                and result.get("thread_id")
+                and not thread_id_for_chunks
+            ):
+                thread_id_for_chunks = result["thread_id"]
             last_result = result
         return last_result
 

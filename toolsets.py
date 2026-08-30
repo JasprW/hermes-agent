@@ -55,6 +55,9 @@ _HERMES_CORE_TOOLS = [
     "browser_exec",
     # Text-to-speech
     "text_to_speech",
+    # Discord forum posting (explicit-title cron posts) — kept in core so it
+    # is never folded behind tool_search for cron/messaging sessions
+    "discord_forum_post",
     # Planning & memory
     "todo", "memory",
     # NOTE: the desktop Project tools (project_list/create/switch) are
