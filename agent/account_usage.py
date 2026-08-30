@@ -795,10 +795,18 @@ def _fetch_anthropic_account_usage() -> Optional[AccountUsageSnapshot]:
     if extra.get("is_enabled"):
         used_credits = extra.get("used_credits")
         monthly_limit = extra.get("monthly_limit")
+        decimal_places = extra.get("decimal_places", 2)
         currency = extra.get("currency") or "USD"
         if isinstance(used_credits, (int, float)) and isinstance(monthly_limit, (int, float)):
+            # The usage API reports extra-usage amounts in minor units
+            # (credits = cents, e.g. amount_minor=30000/exponent=2 for $300).
+            # Convert to the display currency before rendering so the line
+            # reads "$105.87 / $300.00 USD" instead of "10587 / 30000 USD".
+            scale = 10 ** int(decimal_places or 2)
+            used_usd = used_credits / scale
+            limit_usd = monthly_limit / scale
             details.append(
-                f"Extra usage: {used_credits:.2f} / {monthly_limit:.2f} {currency}"
+                f"Extra usage: {used_usd:.2f} / {limit_usd:.2f} {currency}"
             )
     return AccountUsageSnapshot(
         provider="anthropic",
