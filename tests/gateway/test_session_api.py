@@ -1217,3 +1217,31 @@ async def test_request_model_without_provider_keeps_named_custom_provider_creden
     assert captured["model"] == "acme/other"
     assert captured["api_key"] == "sk-acme"
     assert captured["base_url"] == "https://acme.example/v1"
+
+
+@pytest.mark.asyncio
+async def test_v1_chat_completions_keeps_named_custom_provider_credentials(
+    session_db, monkeypatch
+):
+    """Third re-resolution site, on the OpenAI-compatible surface: a bare per-request model (the
+    `direct_model_requests` opt-in) re-resolves the provider from the full identity too, so /v1
+    clients do not lose the credentials the other two routes keep."""
+    adapter = APIServerAdapter(
+        PlatformConfig(enabled=True, extra={"direct_model_requests": True})
+    )
+    adapter._session_db = session_db
+    _patch_named_custom_runtime(monkeypatch)
+    captured = _install_capturing_agent(monkeypatch)
+
+    app = web.Application()
+    app.router.add_post("/v1/chat/completions", adapter._handle_chat_completions)
+    async with TestClient(TestServer(app)) as cli:
+        resp = await cli.post(
+            "/v1/chat/completions",
+            json={"model": "acme/other", "messages": [{"role": "user", "content": "hi"}]},
+        )
+        assert resp.status == 200, await resp.text()
+
+    assert captured["model"] == "acme/other"
+    assert captured["api_key"] == "sk-acme"
+    assert captured["base_url"] == "https://acme.example/v1"
